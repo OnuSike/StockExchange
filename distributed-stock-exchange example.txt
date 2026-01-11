@@ -1,0 +1,67 @@
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "stockSymbol": "AAPL",
+    "orderType": "SELL",
+    "price": 149,
+    "quantity": 10,
+    "traderId": "Seller-1"
+  }'
+
+
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "stockSymbol": "AAPL",
+    "orderType": "SELL",
+    "price": 151,
+    "quantity": 5,
+    "traderId": "Seller-2"
+  }'
+
+
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "stockSymbol": "AAPL",
+    "orderType": "BUY",
+    "price": 150,
+    "quantity": 7,
+    "traderId": "Buyer-1"
+  }'
+
+
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "stockSymbol": "AAPL",
+    "orderType": "BUY",
+    "price": 152,
+    "quantity": 10,
+    "traderId": "Buyer-2"
+  }'
+
+
+curl http://localhost:8081/analyze
+
+
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "stockSymbol": "AAPL",
+    "orderType": "SELL",
+    "price": 155,
+    "quantity": 5,
+    "traderId": "Seller-3"
+  }'
+
+
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "stockSymbol": "AAPL",
+    "orderType": "BUY",
+    "price": 156,
+    "quantity": 5,
+    "traderId": "Buyer-3"
+  }'
