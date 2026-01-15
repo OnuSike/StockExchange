@@ -1,0 +1,30 @@
+PREREQ:
+
+powershell:
+netsh interface portproxy add v4tov4 listenport=8080 listenaddress=0.0.0.0 connectport=8080 connectaddress=<adresa ip wsl>
+New-NetFirewallRule -DisplayName "Exchange Server 8080" -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow
+netsh interface portproxy add v4tov4 listenport=8081 listenaddress=0.0.0.0 connectport=8081 connectaddress=<adresa ip wsl>
+New-NetFirewallRule -DisplayName "AI Service 8081" -Direction Inbound -LocalPort 8081 -Protocol TCP -Action Allow
+
+index.html:
+const API_URL = 'http://<adresa ip>:8080/api';
+const AI_URL = 'http://<adresa ip>:8081';
+
+
+====================================================================================================
+
+
+wsl1:
+cd exchange-server
+java -jar target/exchange-server-1.0.0.jar
+
+wsl2:
+cd ai-service
+java -jar target/ai-service-1.0.0.jar
+
+powershell1:
+cd E:\Desktop\Uni\PrjPCBE\StockExchange_liniarRegresion\StockExchange-main\distributed-stock-exchange
+python -m http.server 8000
+
+device2:
+http://<adresa ip>:8000/index.html
