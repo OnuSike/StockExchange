@@ -2,3 +2,4 @@ com/example/ai/controller/AiController.class
 com/example/ai/service/AiAnalyzer$1.class
 com/example/ai/AiApplication.class
 com/example/ai/service/AiAnalyzer.class
+com/example/ai/service/AiAnalyzer$SimpleRegression.class

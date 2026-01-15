@@ -1,5 +1,5 @@
 package com.example.exchange.controller;
-
+import com.example.exchange.engine.OrderBook;
 import com.example.exchange.engine.Order;
 import com.example.exchange.engine.StockExchange;
 import com.example.exchange.engine.Trade;
@@ -12,6 +12,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api")
+@CrossOrigin(origins = "*")
 public class ExchangeController {
 
     private final StockExchange exchange = new StockExchange();
@@ -33,6 +34,15 @@ public class ExchangeController {
     public ResponseEntity<Void> cancelOrder(@PathVariable String orderId) {
         exchange.cancelOrder(orderId);
         return ResponseEntity.ok().build();
+    }
+
+    // Adaugă asta în ExchangeController.java
+// Importă clasa OrderBook dacă e nevoie
+
+
+    @GetMapping("/orderbook/data/{symbol}")
+    public ResponseEntity<OrderBook> getOrderBookData(@PathVariable String symbol) {
+        return ResponseEntity.ok(exchange.getOrderBook(symbol));
     }
 
     @GetMapping("/trades")

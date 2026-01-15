@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <title>Pro Trading Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #1e1e2e; color: #cdd6f4; margin: 0; padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: #181825; padding: 15px; border-radius: 10px; }
+        .grid-container { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 20px; height: 85vh; }
+
+        .panel { background: #313244; padding: 15px; border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; }
+        h2, h3 { margin-top: 0; color: #89b4fa; font-size: 1.1rem; border-bottom: 1px solid #45475a; padding-bottom: 10px; }
+
+        /* Formulare */
+        input, select, button { width: 100%; padding: 8px; margin-top: 5px; background: #45475a; border: 1px solid #585b70; color: white; border-radius: 4px; box-sizing: border-box; }
+        button { cursor: pointer; font-weight: bold; margin-top: 15px; transition: 0.2s; }
+        .btn-buy { background-color: #a6e3a1; color: #1e1e2e; }
+        .btn-sell { background-color: #f38ba8; color: #1e1e2e; }
+        .btn-modify { background-color: #f9e2af; color: #1e1e2e; margin-top: 0; width: auto; padding: 4px 10px; }
+
+        /* Order Book Vizual */
+        .order-book-container { display: flex; gap: 10px; height: 100%; }
+        .book-side { flex: 1; display: flex; flex-direction: column; }
+        .book-row { display: flex; justify-content: space-between; padding: 4px; border-bottom: 1px solid #45475a; font-size: 0.9em; }
+        .ask-row { color: #f38ba8; } /* Rosu pentru Sell */
+        .bid-row { color: #a6e3a1; } /* Verde pentru Buy */
+
+        /* My Orders */
+        .my-order-item { background: #181825; padding: 10px; margin-bottom: 5px; border-radius: 5px; border-left: 4px solid #89b4fa; }
+        .modify-group { display: flex; gap: 5px; margin-top: 5px; }
+
+        /* Logs */
+        #tradeLog { overflow-y: auto; flex-grow: 1; font-family: monospace; font-size: 0.85rem; }
+        .log-entry { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #45475a; }
+        .log-buyer { color: #a6e3a1; }
+        .log-seller { color: #f38ba8; }
+
+        .ai-section { margin-top: 20px; background: #11111b; padding: 10px; border-radius: 5px; border: 1px solid #cba6f7; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div>
+        <span style="font-size: 1.5em;">🚀 Bursa Distribuită</span>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+        <label>👤 Trader:</label>
+        <input type="text" id="traderId" value="Trader-1" style="width: 150px; margin:0;">
+        <select id="activeSymbol" onchange="refreshData()" style="width: 100px; margin:0;">
+            <option value="AAPL">AAPL</option>
+            <option value="MSFT">MSFT</option>
+            <option value="GOOGL">GOOGL</option>
+        </select>
+    </div>
+</div>
+
+<div class="grid-container">
+
+    <div class="panel">
+        <h2>📝 Plasează Ordin</h2>
+        <label>Tip:</label>
+        <select id="type">
+            <option value="BUY">🟢 CUMPĂRĂ (BID)</option>
+            <option value="SELL">🔴 VINDE (ASK)</option>
+        </select>
+        <label>Preț ($):</label>
+        <input type="number" id="price" value="150">
+        <label>Cantitate:</label>
+        <input type="number" id="quantity" value="10">
+
+        <button onclick="submitOrder()" id="actionBtn" class="btn-buy">TRIMITE ORDIN</button>
+        <div id="statusMsg" style="margin-top: 10px; height: 20px;"></div>
+
+        <div class="ai-section">
+            <h3>🤖 AI Analist</h3>
+            <button onclick="askAi()" style="background:#cba6f7; color:#1e1e2e;">Analizează Piața</button>
+            <div id="aiResult" style="margin-top:5px; font-size: 0.8em; white-space: pre-wrap;">...</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>📊 Order Book: <span id="symbolDisplay">AAPL</span></h2>
+        <div class="order-book-container">
+            <div class="book-side">
+                <h3 style="color:#a6e3a1; text-align: center;">BIDS (Cumpără)</h3>
+                <div id="bidsList" style="overflow-y: auto;"></div>
+            </div>
+            <div class="book-side">
+                <h3 style="color:#f38ba8; text-align: center;">ASKS (Vinde)</h3>
+                <div id="asksList" style="overflow-y: auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>⚙️ Ordinele Mele Active</h2>
+        <div id="myOrdersList" style="height: 40%; overflow-y: auto; margin-bottom: 20px;"></div>
+
+        <h2>📜 Istoric Tranzacții</h2>
+        <div id="tradeLog"></div>
+    </div>
+</div>
+
+<script>
+    const API_URL = 'http://192.168.1.103:8080/api';
+    const AI_URL = 'http://192.168.1.103:8081';
+
+    // Schimbă culoarea butonului în funcție de selecție
+    document.getElementById('type').addEventListener('change', (e) => {
+        const btn = document.getElementById('actionBtn');
+        if(e.target.value === 'BUY') {
+            btn.className = 'btn-buy';
+            btn.innerText = 'TRIMITE BID (CUMPĂRĂ)';
+        } else {
+            btn.className = 'btn-sell';
+            btn.innerText = 'TRIMITE ASK (VINDE)';
+        }
+    });
+
+    async function submitOrder() {
+        const order = {
+            stockSymbol: document.getElementById('activeSymbol').value,
+            orderType: document.getElementById('type').value,
+            price: parseFloat(document.getElementById('price').value),
+            quantity: parseInt(document.getElementById('quantity').value),
+            traderId: document.getElementById('traderId').value
+        };
+
+        await fetch(`${API_URL}/orders`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(order)
+        });
+        refreshData();
+    }
+
+    async function modifyOrder(orderId) {
+        const newPrice = prompt("Introdu noul preț pentru ordin:");
+        if(newPrice) {
+            await fetch(`${API_URL}/orders/${orderId}/modify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ newPrice: parseFloat(newPrice) })
+            });
+            refreshData();
+        }
+    }
+
+    async function cancelOrder(orderId) {
+        if(confirm("Sigur vrei să anulezi?")) {
+            await fetch(`${API_URL}/orders/${orderId}/cancel`, { method: 'POST' });
+            refreshData();
+        }
+    }
+
+    async function askAi() {
+        document.getElementById('aiResult').innerText = "⏳ Gândesc...";
+        try {
+            const res = await fetch(`${AI_URL}/analyze?exchangeUrl=${API_URL}/trades`);
+            const text = await res.text();
+            document.getElementById('aiResult').innerText = text;
+        } catch(e) {
+            document.getElementById('aiResult').innerText = "AI Service indisponibil.";
+        }
+    }
+
+    async function refreshData() {
+        const symbol = document.getElementById('activeSymbol').value;
+        const currentUser = document.getElementById('traderId').value;
+        document.getElementById('symbolDisplay').innerText = symbol;
+
+        // 1. Fetch Order Book
+        try {
+            const res = await fetch(`${API_URL}/orderbook/data/${symbol}`);
+            if(res.ok) {
+                const data = await res.json();
+                renderOrderBook(data.bids, data.asks);
+                renderMyOrders(data.bids, data.asks, currentUser);
+            }
+        } catch(e) { console.log("Backend need update for orderbook data"); }
+
+        // 2. Fetch Trades
+        const tradesRes = await fetch(`${API_URL}/trades`);
+        const trades = await tradesRes.json();
+        renderTrades(trades);
+    }
+
+    function renderOrderBook(bids, asks) {
+        // Sortare simplă (Backend-ul PriorityQueue nu garantează ordinea la JSON)
+        bids.sort((a,b) => b.price - a.price); // Descrescător pt Bids
+        asks.sort((a,b) => a.price - b.price); // Crescător pt Asks
+
+        const bidsContainer = document.getElementById('bidsList');
+        bidsContainer.innerHTML = bids.map(o => `
+                <div class="book-row bid-row">
+                    <span>${o.quantity} buc</span>
+                    <span>@ $${o.price.toFixed(2)}</span>
+                    <span style="font-size:0.8em; opacity:0.7;">(${o.traderId})</span>
+                </div>
+            `).join('');
+
+        const asksContainer = document.getElementById('asksList');
+        asksContainer.innerHTML = asks.map(o => `
+                <div class="book-row ask-row">
+                    <span>${o.quantity} buc</span>
+                    <span>@ $${o.price.toFixed(2)}</span>
+                    <span style="font-size:0.8em; opacity:0.7;">(${o.traderId})</span>
+                </div>
+            `).join('');
+    }
+
+    function renderMyOrders(bids, asks, user) {
+        const myOrders = [...bids, ...asks].filter(o => o.traderId === user);
+        const container = document.getElementById('myOrdersList');
+
+        if(myOrders.length === 0) {
+            container.innerHTML = '<div style="color:gray; text-align:center;">Niciun ordin activ</div>';
+            return;
+        }
+
+        container.innerHTML = myOrders.map(o => `
+                <div class="my-order-item">
+                    <div><b>${o.orderType}</b> ${o.stockSymbol} x ${o.quantity} @ $${o.price}</div>
+                    <div class="modify-group">
+                        <button class="btn-modify" onclick="modifyOrder('${o.orderId}')">Modifică Preț</button>
+                        <button class="btn-modify" style="background:#f38ba8;" onclick="cancelOrder('${o.orderId}')">X</button>
+                    </div>
+                </div>
+            `).join('');
+    }
+
+    function renderTrades(trades) {
+        const container = document.getElementById('tradeLog');
+        // Afișăm ultimele tranzacții sus
+        container.innerHTML = trades.slice().reverse().map(t => `
+                <div class="log-entry">
+                    Match! <span class="log-buyer">${t.buyerId} (Bid)</span> a cumpărat de la
+                    <span class="log-seller">${t.sellerId} (Ask)</span> <br>
+                    <b>${t.stockSymbol}</b>: ${t.quantity} buc la $${t.price}
+                </div>
+            `).join('');
+    }
+
+    // Auto-refresh la 1 secundă
+    setInterval(refreshData, 1000);
+    refreshData();
+</script>
+</body>
+</html>

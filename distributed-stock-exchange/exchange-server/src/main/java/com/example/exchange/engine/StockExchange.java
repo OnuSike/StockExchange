@@ -44,6 +44,11 @@ public class StockExchange {
         this.engineThread.start();
     }
 
+    // Adaugă asta în StockExchange.java
+    public OrderBook getOrderBook(String stockSymbol) {
+        return orderBooks.get(stockSymbol);
+    }
+
     public void submitOrder(Order order) {
         try {
             eventQueue.put(new NewOrderEvent(order));
@@ -217,11 +222,27 @@ public class StockExchange {
         OrderBook book = orderBooks.get(orderToModify.getStockSymbol());
         if (book == null) return;
 
+        // 1. Scoatem ordinul din cartea de ordine (pentru a-l actualiza și re-evalua)
         book.removeOrder(orderToModify);
 
         System.out.printf("Engine: MODIFYING order to new price $%.2f\n", newPrice);
         orderToModify.setPrice(newPrice);
+        orderToModify.resetTimestamp(); // Opțional: resetăm timpul pentru prioritate
 
-        book.addOrder(orderToModify);
+        // 2. ÎNCERCĂM SĂ FACEM MATCH (Bug fix)
+        // După modificare, ordinul poate deveni eligibil pentru execuție imediată.
+        if (orderToModify.getOrderType() == OrderType.BUY) {
+            match(orderToModify, book.getAsks(), book);
+        } else {
+            match(orderToModify, book.getBids(), book);
+        }
+
+        // 3. Dacă ordinul nu s-a executat complet (mai are cantitate), îl punem înapoi în OrderBook
+        if (orderToModify.getQuantity() > 0) {
+            book.addOrder(orderToModify);
+        } else {
+            // Dacă s-a executat complet, ne asigurăm că e scos din lista de ordine active
+            activeOrders.remove(orderId);
+        }
     }
 }
