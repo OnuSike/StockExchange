@@ -1,0 +1,31 @@
+services:
+  exchange-server:
+    build:
+      context: .
+      dockerfile: exchange-server/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      SERVER_PORT: 8080
+
+  ai-service:
+    build:
+      context: .
+      dockerfile: ai-service/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      SERVER_PORT: 8081
+      AI_EXCHANGE_URL: http://exchange-server:8080/api/trades
+    depends_on:
+      - exchange-server
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    ports:
+      - "8082:80"
+    depends_on:
+      - exchange-server
+      - ai-service

@@ -27,6 +27,16 @@ public class StockExchange {
             this.newPrice = newPrice;
         }
     }
+    static class ClaimAlertEvent implements Event {
+        final String alertId;
+        final String orderId;
+        final String buyerId;
+        ClaimAlertEvent(String alertId, String orderId, String buyerId) {
+            this.alertId = alertId;
+            this.orderId = orderId;
+            this.buyerId = buyerId;
+        }
+    }
 
     private final BlockingQueue<Event> eventQueue = new LinkedBlockingQueue<>();
     private final Thread engineThread;
@@ -34,6 +44,11 @@ public class StockExchange {
     private final Map<String, OrderBook> orderBooks = new ConcurrentHashMap<>();
     private final Map<String, Order> activeOrders = new ConcurrentHashMap<>();
     private final List<Trade> tradeHistory = new ArrayList<>();
+    private final BlockingQueue<Alert> alertQueue = new LinkedBlockingQueue<>();
+    private final Map<String, Alert> activeAlerts = new ConcurrentHashMap<>();
+    private final Map<String, String> alertByOrderId = new ConcurrentHashMap<>();
+
+    private static final double ALERT_PRICE_THRESHOLD = 30.0;
 
     public StockExchange() {
         String[] stocks = {"AAPL", "MSFT", "GOOGL", "INTC", "AMD", "NVDA"};
@@ -44,7 +59,7 @@ public class StockExchange {
         this.engineThread.start();
     }
 
-    // Adaugă asta în StockExchange.java
+
     public OrderBook getOrderBook(String stockSymbol) {
         return orderBooks.get(stockSymbol);
     }
@@ -79,6 +94,38 @@ public class StockExchange {
         }
     }
 
+    public List<Alert> getActiveAlerts(String traderId) {
+        drainAlertQueue();
+        List<Alert> alerts = new ArrayList<>();
+        for (Alert alert : activeAlerts.values()) {
+            if (!alert.isClaimed() && !alert.getSellerId().equals(traderId)) {
+                alerts.add(alert);
+            }
+        }
+        return alerts;
+    }
+
+    public boolean claimAlert(String alertId, String buyerId) {
+        Alert alert = activeAlerts.get(alertId);
+        if (alert == null || alert.isClaimed()) return false;
+        if (alert.getSellerId().equals(buyerId)) return false;
+
+        synchronized (alert) {
+            Order sellOrder = activeOrders.get(alert.getOrderId());
+            if (sellOrder == null || sellOrder.getQuantity() <= 0) {
+                return false;
+            }
+            if (!alert.claim()) return false;
+            try {
+                eventQueue.put(new ClaimAlertEvent(alertId, alert.getOrderId(), buyerId));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return true;
+    }
+
     public void printMarketState() {
         System.out.println("\n--- MARKET STATE ---");
         for (Map.Entry<String, OrderBook> entry : orderBooks.entrySet()) {
@@ -105,6 +152,9 @@ public class StockExchange {
                 } else if (event instanceof ModifyOrderEvent) {
                     ModifyOrderEvent modEvent = (ModifyOrderEvent) event;
                     processModifyOrder(modEvent.orderId, modEvent.newPrice);
+                } else if (event instanceof ClaimAlertEvent) {
+                    ClaimAlertEvent claimEvent = (ClaimAlertEvent) event;
+                    processClaimAlert(claimEvent.alertId, claimEvent.orderId, claimEvent.buyerId);
                 }
             }
         } catch (InterruptedException e) {
@@ -126,6 +176,7 @@ public class StockExchange {
 
         if (newOrder.getQuantity() > 0) {
             book.addOrder(newOrder);
+            maybeCreateLowPriceAlert(newOrder);
         }
     }
 
@@ -186,18 +237,21 @@ public class StockExchange {
             }
             System.out.println(trade);
 
-            // Update quantities
+
             newOrder.setQuantity(newOrder.getQuantity() - tradeQuantity);
             bestOppositeOrder.setQuantity(bestOppositeOrder.getQuantity() - tradeQuantity);
 
             if (bestOppositeOrder.getQuantity() > 0) {
                 oppositeBook.add(bestOppositeOrder);
+                updateAlertQuantity(bestOppositeOrder.getOrderId(), bestOppositeOrder.getQuantity());
             } else {
                 activeOrders.remove(bestOppositeOrder.getOrderId());
+                removeAlertForOrder(bestOppositeOrder.getOrderId());
             }
 
             if (newOrder.getQuantity() == 0) {
                 activeOrders.remove(newOrder.getOrderId());
+                removeAlertForOrder(newOrder.getOrderId());
                 break;
             }
         }
@@ -211,6 +265,7 @@ public class StockExchange {
         if (book != null) {
             book.removeOrder(orderToCancel);
             activeOrders.remove(orderId);
+            removeAlertForOrder(orderId);
             System.out.println("Engine cancelled: " + orderToCancel);
         }
     }
@@ -222,27 +277,89 @@ public class StockExchange {
         OrderBook book = orderBooks.get(orderToModify.getStockSymbol());
         if (book == null) return;
 
-        // 1. Scoatem ordinul din cartea de ordine (pentru a-l actualiza și re-evalua)
+
         book.removeOrder(orderToModify);
+        removeAlertForOrder(orderId);
 
         System.out.printf("Engine: MODIFYING order to new price $%.2f\n", newPrice);
         orderToModify.setPrice(newPrice);
-        orderToModify.resetTimestamp(); // Opțional: resetăm timpul pentru prioritate
+        orderToModify.resetTimestamp();
 
-        // 2. ÎNCERCĂM SĂ FACEM MATCH (Bug fix)
-        // După modificare, ordinul poate deveni eligibil pentru execuție imediată.
+
+
         if (orderToModify.getOrderType() == OrderType.BUY) {
             match(orderToModify, book.getAsks(), book);
         } else {
             match(orderToModify, book.getBids(), book);
         }
 
-        // 3. Dacă ordinul nu s-a executat complet (mai are cantitate), îl punem înapoi în OrderBook
+
         if (orderToModify.getQuantity() > 0) {
             book.addOrder(orderToModify);
+            maybeCreateLowPriceAlert(orderToModify);
         } else {
-            // Dacă s-a executat complet, ne asigurăm că e scos din lista de ordine active
             activeOrders.remove(orderId);
         }
+    }
+
+    private void processClaimAlert(String alertId, String orderId, String buyerId) {
+        Order sellOrder = activeOrders.get(orderId);
+        if (sellOrder == null || sellOrder.getQuantity() <= 0) {
+            removeAlertForOrder(orderId);
+            return;
+        }
+
+        OrderBook book = orderBooks.get(sellOrder.getStockSymbol());
+        if (book == null) {
+            removeAlertForOrder(orderId);
+            return;
+        }
+
+        book.removeOrder(sellOrder);
+        removeAlertForOrder(orderId);
+
+        int tradeQuantity = sellOrder.getQuantity();
+        double tradePrice = sellOrder.getPrice();
+        Trade trade = new Trade(sellOrder.getStockSymbol(), tradeQuantity, tradePrice, buyerId, sellOrder.getTraderId());
+        synchronized (tradeHistory) {
+            tradeHistory.add(trade);
+        }
+        System.out.println(trade);
+
+        sellOrder.setQuantity(0);
+        activeOrders.remove(sellOrder.getOrderId());
+    }
+
+    private void maybeCreateLowPriceAlert(Order order) {
+        if (order.getOrderType() != OrderType.SELL) return;
+        if (order.getPrice() >= ALERT_PRICE_THRESHOLD) return;
+        if (order.getQuantity() <= 0) return;
+        if (alertByOrderId.containsKey(order.getOrderId())) return;
+
+        Alert alert = new Alert(order.getOrderId(), order.getStockSymbol(), order.getPrice(), order.getQuantity(), order.getTraderId());
+        activeAlerts.put(alert.getId(), alert);
+        alertByOrderId.put(order.getOrderId(), alert.getId());
+        alertQueue.offer(alert);
+    }
+
+    private void removeAlertForOrder(String orderId) {
+        String alertId = alertByOrderId.remove(orderId);
+        if (alertId != null) {
+            activeAlerts.remove(alertId);
+        }
+    }
+
+    private void updateAlertQuantity(String orderId, int quantity) {
+        String alertId = alertByOrderId.get(orderId);
+        if (alertId == null) return;
+        Alert alert = activeAlerts.get(alertId);
+        if (alert != null) {
+            alert.setQuantity(quantity);
+        }
+    }
+
+    private void drainAlertQueue() {
+        List<Alert> drained = new ArrayList<>();
+        alertQueue.drainTo(drained);
     }
 }

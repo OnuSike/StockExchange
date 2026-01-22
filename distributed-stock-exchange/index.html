@@ -11,25 +11,25 @@
         .panel { background: #313244; padding: 15px; border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; }
         h2, h3 { margin-top: 0; color: #89b4fa; font-size: 1.1rem; border-bottom: 1px solid #45475a; padding-bottom: 10px; }
 
-        /* Formulare */
+
         input, select, button { width: 100%; padding: 8px; margin-top: 5px; background: #45475a; border: 1px solid #585b70; color: white; border-radius: 4px; box-sizing: border-box; }
         button { cursor: pointer; font-weight: bold; margin-top: 15px; transition: 0.2s; }
         .btn-buy { background-color: #a6e3a1; color: #1e1e2e; }
         .btn-sell { background-color: #f38ba8; color: #1e1e2e; }
         .btn-modify { background-color: #f9e2af; color: #1e1e2e; margin-top: 0; width: auto; padding: 4px 10px; }
 
-        /* Order Book Vizual */
+
         .order-book-container { display: flex; gap: 10px; height: 100%; }
         .book-side { flex: 1; display: flex; flex-direction: column; }
         .book-row { display: flex; justify-content: space-between; padding: 4px; border-bottom: 1px solid #45475a; font-size: 0.9em; }
-        .ask-row { color: #f38ba8; } /* Rosu pentru Sell */
-        .bid-row { color: #a6e3a1; } /* Verde pentru Buy */
+        .ask-row { color: #f38ba8; }
+        .bid-row { color: #a6e3a1; }
 
-        /* My Orders */
+
         .my-order-item { background: #181825; padding: 10px; margin-bottom: 5px; border-radius: 5px; border-left: 4px solid #89b4fa; }
         .modify-group { display: flex; gap: 5px; margin-top: 5px; }
 
-        /* Logs */
+
         #tradeLog { overflow-y: auto; flex-grow: 1; font-family: monospace; font-size: 0.85rem; }
         .log-entry { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #45475a; }
         .log-buyer { color: #a6e3a1; }
@@ -77,6 +77,11 @@
             <button onclick="askAi()" style="background:#cba6f7; color:#1e1e2e;">Analizează Piața</button>
             <div id="aiResult" style="margin-top:5px; font-size: 0.8em; white-space: pre-wrap;">...</div>
         </div>
+
+        <div class="ai-section" style="border-color:#f9e2af;">
+            <h3>🚨 Alarme Preț</h3>
+            <div id="alertsList" style="font-size: 0.85em;">Nicio alertă activă.</div>
+        </div>
     </div>
 
     <div class="panel">
@@ -103,10 +108,14 @@
 </div>
 
 <script>
-    const API_URL = 'http://192.168.1.103:8080/api';
-    const AI_URL = 'http://192.168.1.103:8081';
+    const API_URL = 'http://localhost:8080/api';
+    const AI_URL = 'http://localhost:8081';
+    const AI_EXCHANGE_URL = (window.location.port === '8082')
+        ? 'http://exchange-server:8080/api/trades'
+        : `${API_URL}/trades`;
+    const seenAlerts = new Set();
 
-    // Schimbă culoarea butonului în funcție de selecție
+
     document.getElementById('type').addEventListener('change', (e) => {
         const btn = document.getElementById('actionBtn');
         if(e.target.value === 'BUY') {
@@ -157,7 +166,7 @@
     async function askAi() {
         document.getElementById('aiResult').innerText = "⏳ Gândesc...";
         try {
-            const res = await fetch(`${AI_URL}/analyze?exchangeUrl=${API_URL}/trades`);
+            const res = await fetch(`${AI_URL}/analyze?exchangeUrl=${encodeURIComponent(AI_EXCHANGE_URL)}`);
             const text = await res.text();
             document.getElementById('aiResult').innerText = text;
         } catch(e) {
@@ -170,7 +179,7 @@
         const currentUser = document.getElementById('traderId').value;
         document.getElementById('symbolDisplay').innerText = symbol;
 
-        // 1. Fetch Order Book
+
         try {
             const res = await fetch(`${API_URL}/orderbook/data/${symbol}`);
             if(res.ok) {
@@ -180,16 +189,18 @@
             }
         } catch(e) { console.log("Backend need update for orderbook data"); }
 
-        // 2. Fetch Trades
+
         const tradesRes = await fetch(`${API_URL}/trades`);
         const trades = await tradesRes.json();
         renderTrades(trades);
+
+        await refreshAlerts(currentUser);
     }
 
     function renderOrderBook(bids, asks) {
-        // Sortare simplă (Backend-ul PriorityQueue nu garantează ordinea la JSON)
-        bids.sort((a,b) => b.price - a.price); // Descrescător pt Bids
-        asks.sort((a,b) => a.price - b.price); // Crescător pt Asks
+
+        bids.sort((a,b) => b.price - a.price);
+        asks.sort((a,b) => a.price - b.price);
 
         const bidsContainer = document.getElementById('bidsList');
         bidsContainer.innerHTML = bids.map(o => `
@@ -232,7 +243,7 @@
 
     function renderTrades(trades) {
         const container = document.getElementById('tradeLog');
-        // Afișăm ultimele tranzacții sus
+
         container.innerHTML = trades.slice().reverse().map(t => `
                 <div class="log-entry">
                     Match! <span class="log-buyer">${t.buyerId} (Bid)</span> a cumpărat de la
@@ -242,7 +253,54 @@
             `).join('');
     }
 
-    // Auto-refresh la 1 secundă
+    async function refreshAlerts(currentUser) {
+        try {
+            const res = await fetch(`${API_URL}/alerts?traderId=${encodeURIComponent(currentUser)}`);
+            if (!res.ok) return;
+            const alerts = await res.json();
+            renderAlerts(alerts);
+            alerts.forEach(a => {
+                if (!seenAlerts.has(a.id)) {
+                    seenAlerts.add(a.id);
+                    const wantsBuy = confirm(`Alertă: ${a.stockSymbol} la $${a.price.toFixed(2)} (cantitate ${a.quantity}). Cumperi acum?`);
+                    if (wantsBuy) {
+                        claimAlert(a.id, currentUser);
+                    }
+                }
+            });
+        } catch (e) {
+            console.log("Alerts unavailable.");
+        }
+    }
+
+    async function claimAlert(alertId, buyerId) {
+        const res = await fetch(`${API_URL}/alerts/${alertId}/claim`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ buyerId })
+        });
+        if (!res.ok) {
+            alert("Alerta a fost deja revendicată de altcineva.");
+        }
+        refreshData();
+    }
+
+    function renderAlerts(alerts) {
+        const container = document.getElementById('alertsList');
+        if (!alerts.length) {
+            container.innerHTML = 'Nicio alertă activă.';
+            return;
+        }
+        container.innerHTML = alerts.map(a => `
+                <div class="my-order-item" style="border-left-color:#f9e2af;">
+                    <div><b>${a.stockSymbol}</b> la $${a.price.toFixed(2)} (cantitate ${a.quantity})</div>
+                    <div class="modify-group">
+                        <button class="btn-modify" onclick="claimAlert('${a.id}', document.getElementById('traderId').value)">Cumpără</button>
+                    </div>
+                </div>
+            `).join('');
+    }
+
     setInterval(refreshData, 1000);
     refreshData();
 </script>

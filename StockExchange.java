@@ -179,7 +179,7 @@ public class StockExchange {
             }
             System.out.println(trade);
 
-            // Update quantities
+
             newOrder.setQuantity(newOrder.getQuantity() - tradeQuantity);
             bestOppositeOrder.setQuantity(bestOppositeOrder.getQuantity() - tradeQuantity);
 

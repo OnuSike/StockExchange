@@ -20,7 +20,7 @@ public class AiAnalyzer {
 
     public String analyzeFromExchange(String exchangeTradesUrl) {
         try {
-            // 1. Luăm datele de la Exchange
+
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(exchangeTradesUrl))
                     .GET()
@@ -43,37 +43,37 @@ public class AiAnalyzer {
         StringBuilder sb = new StringBuilder();
         sb.append("🤖 AI PREDICTION (Linear Regression Model):\n");
 
-        // Grupăm tranzacțiile după simbol (AAPL, MSFT etc.)
+
         Map<String, List<Map<String, Object>>> tradesBySymbol = trades.stream()
                 .collect(Collectors.groupingBy(t -> (String) t.get("stockSymbol")));
 
         tradesBySymbol.forEach((symbol, symbolTrades) -> {
-            // Avem nevoie de cel puțin 2 puncte pentru o linie
+
             if (symbolTrades.size() < 2) {
                 sb.append(String.format("• %s: Date insuficiente (%d tranzacție)\n", symbol, symbolTrades.size()));
                 return;
             }
 
-            // Extragem prețurile cronologic
-            // Considerăm X = indexul tranzacției (timpul), Y = prețul
+
+
             List<Double> prices = symbolTrades.stream()
                     .map(t -> ((Number) t.get("price")).doubleValue())
                     .collect(Collectors.toList());
 
-            // --- AICI ESTE PARTEA DE MACHINE LEARNING ---
+
             SimpleRegression model = new SimpleRegression();
             for (int i = 0; i < prices.size(); i++) {
-                model.addData(i, prices.get(i)); // Antrenăm modelul: La momentul 'i', prețul a fost 'p'
+                model.addData(i, prices.get(i));
             }
 
             double currentPrice = prices.get(prices.size() - 1);
-            double slope = model.getSlope(); // Panta: Cât de repede crește/scade
+            double slope = model.getSlope();
 
-            // PREZICERE: Care va fi prețul la următorul pas (index = size)?
+
             double nextPricePrediction = model.predict(prices.size());
 
-            // Calculăm acuratețea (R-squared simplificat - eroarea medie)
-            double trendStrength = Math.abs(slope) * 100; // Doar un scor arbitrar pt demo
+
+            double trendStrength = Math.abs(slope) * 100;
 
             String emoji = slope > 0 ? "📈" : (slope < 0 ? "📉" : "➡️");
             String advice = "";
@@ -91,8 +91,8 @@ public class AiAnalyzer {
         return sb.toString();
     }
 
-    // Algoritmul matematic de Regresie Liniară (Least Squares)
-    // Învață ecuația y = slope * x + intercept
+
+
     static class SimpleRegression {
         private double sumX = 0;
         private double sumY = 0;

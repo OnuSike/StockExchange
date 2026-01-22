@@ -9,6 +9,19 @@ java Main
 
 
 Partea 2
-Aplicatie distribuita java cu 2 servere(unul de exchange si unul ai) si mai multi clienti.
-Pentru rulare: "distributed-stock-exchange deploy.txt"
-exemplu de input client CLI: "distributed-stock-exchange example.txt"
+Aplicatie distribuita java cu 2 servere(unul de exchange si unul ai) si 1 client.
+Pentru rulare:
+mvn spring-boot:run   (exchange server, pe port 8080)
+mvn spring-boot:run   (ai-service, pe port 8081)
+
+exemplu de input client: "distributed-stock-exchange example.txt"
+
+
+How to run in docker
+
+cd C:\Users\tigan\Desktop\StockExchange_liniarRegresion\StockExchange-main\distributed-stock-exchange
+docker compose up --build
+
+how to stop docker
+
+docker compose down

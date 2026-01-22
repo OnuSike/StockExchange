@@ -1,10 +1,13 @@
 package com.example.exchange.controller;
+import com.example.exchange.engine.Alert;
 import com.example.exchange.engine.OrderBook;
 import com.example.exchange.engine.Order;
 import com.example.exchange.engine.StockExchange;
 import com.example.exchange.engine.Trade;
+import com.example.exchange.dto.ClaimRequest;
 import com.example.exchange.dto.ModifyRequest;
 import com.example.exchange.dto.OrderRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -36,8 +39,8 @@ public class ExchangeController {
         return ResponseEntity.ok().build();
     }
 
-    // Adaugă asta în ExchangeController.java
-// Importă clasa OrderBook dacă e nevoie
+
+
 
 
     @GetMapping("/orderbook/data/{symbol}")
@@ -50,9 +53,23 @@ public class ExchangeController {
         return ResponseEntity.ok(exchange.getTradeHistory());
     }
 
+    @GetMapping("/alerts")
+    public ResponseEntity<List<Alert>> alerts(@RequestParam String traderId) {
+        return ResponseEntity.ok(exchange.getActiveAlerts(traderId));
+    }
+
+    @PostMapping("/alerts/{alertId}/claim")
+    public ResponseEntity<Void> claimAlert(@PathVariable String alertId, @RequestBody ClaimRequest req) {
+        boolean accepted = exchange.claimAlert(alertId, req.getBuyerId());
+        if (!accepted) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+        return ResponseEntity.ok().build();
+    }
+
     @GetMapping("/orderbook/{symbol}")
     public ResponseEntity<String> orderbook(@PathVariable String symbol) {
-        // text dump
+
         exchange.printMarketState();
         return ResponseEntity.ok("Market state printed to server logs (demo)");
     }
